@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Log Maintenance Plotter - KAME Label</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<style>
+:root{--g:#1b4332;--g2:#2d6a4f;--g3:#d8f3dc;--bg:#f4f7f5;--tx:#1f2937;--mu:#6b7280;--bd:#dfe5e1;--red:#c62828;--org:#ef6c00;--blu:#1565c0}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--tx);font-size:14px}
+header{background:var(--g);color:#fff;padding:14px 24px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px}
+header h1{margin:0;font-size:20px;letter-spacing:.3px}
+header small{display:block;opacity:.8;font-size:12px;margin-top:2px}
+.wrap{max-width:1280px;margin:0 auto;padding:18px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:16px}
+.stat{background:#fff;border:1px solid var(--bd);border-radius:10px;padding:12px 14px;border-left:4px solid var(--g2)}
+.stat b{display:block;font-size:24px;line-height:1.2}
+.stat span{color:var(--mu);font-size:12px}
+.bar{display:flex;gap:8px;flex-wrap:wrap;align-items:end;background:#fff;border:1px solid var(--bd);border-radius:10px;padding:12px;margin-bottom:14px}
+.bar label{display:flex;flex-direction:column;font-size:11px;color:var(--mu);gap:3px}
+.bar .sp{flex:1}
+input,select,textarea{font:inherit;padding:7px 9px;border:1px solid #c9d2cc;border-radius:7px;background:#fff;color:var(--tx);min-width:0}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--g3);border-color:var(--g2)}
+button{font:inherit;cursor:pointer;border:0;border-radius:7px;padding:8px 14px;background:var(--g2);color:#fff;font-weight:600}
+button:hover{background:var(--g)}
+button.sec{background:#fff;color:var(--g);border:1px solid var(--g2)}
+button.sec:hover{background:var(--g3)}
+button.danger{background:#fff;color:var(--red);border:1px solid #e6b3b3;padding:4px 9px;font-weight:500}
+button.mini{padding:4px 9px;font-weight:500}
+.tw{background:#fff;border:1px solid var(--bd);border-radius:10px;overflow:auto}
+table{border-collapse:collapse;width:100%;min-width:980px}
+th{background:var(--g);color:#fff;text-align:left;padding:9px 10px;font-size:12px;white-space:nowrap;position:sticky;top:0}
+td{padding:8px 10px;border-top:1px solid var(--bd);vertical-align:top}
+tr:nth-child(even) td{background:#f9fbfa}
+.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;white-space:nowrap}
+.k-Kerusakan{background:#fde8e8;color:var(--red)}.k-Penggantian{background:#e3f0ff;color:var(--blu)}.k-Perbaikan{background:#fff0dc;color:var(--org)}.k-Preventive{background:var(--g3);color:var(--g)}
+.s-Selesai{background:var(--g3);color:var(--g)}.s-Proses{background:#fff0dc;color:var(--org)}.s-Menunggu{background:#fde8e8;color:var(--red)}
+.parts div{white-space:nowrap}
+.empty{padding:40px;text-align:center;color:var(--mu)}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:flex-start;justify-content:center;overflow:auto;padding:20px;z-index:10}
+.modal.on{display:flex}
+.card{background:#fff;border-radius:12px;width:100%;max-width:720px;padding:20px}
+.card h2{margin:0 0 12px;color:var(--g)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.grid label{display:flex;flex-direction:column;font-size:12px;color:var(--mu);gap:3px}
+.full{grid-column:1/-1}
+.prow{display:grid;grid-template-columns:1fr 80px 34px;gap:6px;margin-bottom:6px}
+.acts{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
+@media(max-width:600px){.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <div><h1>KAME Label &middot; Log Maintenance Plotter</h1><small>Catatan kerusakan, perbaikan &amp; penggantian part mesin plotter</small></div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap">
+    <button class="sec" onclick="exportPDF()">Export PDF</button>
+    <button class="sec" onclick="exportCSV()">Export CSV</button>
+    <button onclick="openForm()">+ Tambah Log</button>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="stats" id="stats"></div>
+
+  <div class="bar">
+    <label>Cari<input id="fq" placeholder="masalah, part, PIC..." oninput="render()"></label>
+    <label>Mesin<select id="fm" onchange="render()"></select></label>
+    <label>Jenis<select id="fj" onchange="render()"></select></label>
+    <label>Status<select id="fs" onchange="render()"></select></label>
+    <label>Dari<input type="date" id="fd1" onchange="render()"></label>
+    <label>Sampai<input type="date" id="fd2" onchange="render()"></label>
+    <button class="sec mini" onclick="resetFilter()">Reset</button>
+    <span class="sp"></span>
+    <button class="sec mini" onclick="backup()">Backup JSON</button>
+    <button class="sec mini" onclick="document.getElementById('imp').click()">Restore JSON</button>
+    <input type="file" id="imp" accept=".json" style="display:none" onchange="restore(event)">
+  </div>
+
+  <div class="tw"><table>
+    <thead><tr><th>Tanggal</th><th>Mesin</th><th>Jenis</th><th>Masalah / Kerusakan</th><th>Penyebab</th><th>Tindakan</th><th>Part Diganti</th><th>Downtime</th><th>PIC</th><th>Status</th><th></th></tr></thead>
+    <tbody id="tb"></tbody>
+  </table><div class="empty" id="empty" style="display:none">Belum ada log. Klik <b>+ Tambah Log</b> untuk mulai.</div></div>
+  <p style="color:var(--mu);font-size:12px">Data tersimpan di browser ini (localStorage). Gunakan Backup JSON secara berkala atau untuk pindah ke komputer lain.</p>
+</div>
+
+<div class="modal" id="modal"><div class="card">
+  <h2 id="mt">Tambah Log</h2>
+  <div class="grid">
+    <label>Tanggal<input type="date" id="f_tgl"></label>
+    <label>Mesin<select id="f_mesin"></select></label>
+    <label>Jenis<select id="f_jenis"></select></label>
+    <label>Status<select id="f_status"></select></label>
+    <label class="full">Masalah / Kerusakan<textarea id="f_masalah" rows="2" placeholder="mis. Pisau tidak memotong tembus, kepala bergetar"></textarea></label>
+    <label class="full">Penyebab<textarea id="f_sebab" rows="2" placeholder="mis. Pisau tumpul, bearing aus"></textarea></label>
+    <label class="full">Tindakan / Perbaikan<textarea id="f_tindakan" rows="2" placeholder="mis. Ganti pisau, kalibrasi ulang offset"></textarea></label>
+    <div class="full"><div style="font-size:12px;color:var(--mu);margin-bottom:4px">Part yang diganti</div>
+      <div id="parts"></div><button class="sec mini" type="button" onclick="addPart()">+ Tambah part</button></div>
+    <label>Downtime (menit)<input type="number" id="f_down" min="0" step="1" placeholder="0"></label>
+    <label>PIC / Teknisi<input id="f_pic" list="picl" placeholder="nama"></label>
+    <label>Biaya (Rp, opsional)<input type="number" id="f_biaya" min="0" step="1000" placeholder="0"></label>
+    <label>Catatan<input id="f_cat" placeholder="opsional"></label>
+  </div>
+  <datalist id="picl"></datalist>
+  <div class="acts"><button class="sec" onclick="closeForm()">Batal</button><button onclick="save()">Simpan</button></div>
+</div></div>
+
+<script>
+const KEY='kame_plotter_maintenance_v1';
+const MESIN=['Plotter RTS','Plotter RTR','Double Station'];
+const JENIS=['Kerusakan','Penggantian Part','Perbaikan','Preventive'];
+const STATUS=['Selesai','Dalam Proses','Menunggu Part'];
+const PIC=['Fais','Shintia','Hari','Thomas','Hafis','Kevin','Ryan','Raka','Fajar'];
+let logs=[],editId=null;
+const $=id=>document.getElementById(id);
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const kcls=j=>'k-'+j.split(' ')[0];
+const scls=s=>'s-'+s.split(' ')[0];
+const today=()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')};
+const fd=s=>{if(!s)return'';const[a,b,c]=s.split('-');return c+'/'+b+'/'+a};
+const rp=n=>n?'Rp '+Number(n).toLocaleString('id-ID'):'';
+const fmtMin=m=>{m=+m||0;if(!m)return'-';return m>=60?Math.floor(m/60)+' j '+(m%60?m%60+' m':''):m+' m'};
+
+function load(){try{logs=JSON.parse(localStorage.getItem(KEY)||'[]')}catch(e){logs=[]}}
+function persist(){try{localStorage.setItem(KEY,JSON.stringify(logs))}catch(e){alert('Gagal menyimpan ke browser: '+e.message)}}
+
+function fillSel(id,arr,all){$(id).innerHTML=(all?'<option value="">Semua</option>':'')+arr.map(x=>`<option>${esc(x)}</option>`).join('')}
+function init(){
+  fillSel('fm',MESIN,1);fillSel('fj',JENIS,1);fillSel('fs',STATUS,1);
+  fillSel('f_mesin',MESIN);fillSel('f_jenis',JENIS);fillSel('f_status',STATUS);
+  $('picl').innerHTML=PIC.map(p=>`<option value="${p}">`).join('');
+  load();render();
+}
+function filtered(){
+  const q=$('fq').value.toLowerCase(),m=$('fm').value,j=$('fj').value,s=$('fs').value,d1=$('fd1').value,d2=$('fd2').value;
+  return logs.filter(l=>{
+    if(m&&l.mesin!==m)return false;if(j&&l.jenis!==j)return false;if(s&&l.status!==s)return false;
+    if(d1&&l.tgl<d1)return false;if(d2&&l.tgl>d2)return false;
+    if(q){const h=[l.masalah,l.sebab,l.tindakan,l.pic,l.cat,l.mesin,(l.parts||[]).map(p=>p.nama).join(' ')].join(' ').toLowerCase();if(!h.includes(q))return false}
+    return true}).sort((a,b)=>b.tgl.localeCompare(a.tgl)||b.id-a.id);
+}
+function partsText(l){return(l.parts||[]).map(p=>p.nama+(p.qty>1?' x'+p.qty:'')).join(', ')}
+function render(){
+  const L=filtered();
+  $('tb').innerHTML=L.map(l=>`<tr>
+    <td style="white-space:nowrap">${fd(l.tgl)}</td><td style="white-space:nowrap">${esc(l.mesin)}</td>
+    <td><span class="badge ${kcls(l.jenis)}">${esc(l.jenis)}</span></td>
+    <td>${esc(l.masalah)}</td><td>${esc(l.sebab)}</td><td>${esc(l.tindakan)}${l.cat?`<div style="color:var(--mu);font-size:12px">Cat: ${esc(l.cat)}</div>`:''}</td>
+    <td class="parts">${(l.parts||[]).map(p=>`<div>${esc(p.nama)}${p.qty>1?' <b>x'+p.qty+'</b>':''}</div>`).join('')||'-'}</td>
+    <td style="white-space:nowrap">${fmtMin(l.down)}</td><td>${esc(l.pic)}</td>
+    <td><span class="badge ${scls(l.status)}">${esc(l.status)}</span></td>
+    <td style="white-space:nowrap"><button class="sec mini" onclick="editLog(${l.id})">Edit</button> <button class="danger" onclick="delLog(${l.id})">Hapus</button></td></tr>`).join('');
+  $('empty').style.display=L.length?'none':'block';
+  const down=L.reduce((a,l)=>a+(+l.down||0),0),np=L.reduce((a,l)=>a+(l.parts||[]).reduce((x,p)=>x+(+p.qty||0),0),0);
+  const open=L.filter(l=>l.status!=='Selesai').length,rus=L.filter(l=>l.jenis==='Kerusakan').length;
+  $('stats').innerHTML=[['Total log',L.length,''],['Kerusakan',rus,'#c62828'],['Part diganti (pcs)',np,'#1565c0'],['Total downtime',fmtMin(down),'#ef6c00'],['Belum selesai',open,open?'#c62828':'']]
+    .map(([t,v,c])=>`<div class="stat" ${c?`style="border-left-color:${c}"`:''}><b>${v}</b><span>${t}</span></div>`).join('');
+}
+function resetFilter(){['fq','fm','fj','fs','fd1','fd2'].forEach(i=>$(i).value='');render()}
+
+function addPart(nama='',qty=1){
+  const d=document.createElement('div');d.className='prow';
+  d.innerHTML=`<input placeholder="nama part (mis. pisau cutting, bearing)" value="${esc(nama)}"><input type="number" min="1" value="${esc(qty)}"><button class="danger" type="button" onclick="this.parentNode.remove()">&times;</button>`;
+  $('parts').appendChild(d);
+}
+function openForm(l){
+  editId=l?l.id:null;$('mt').textContent=l?'Edit Log':'Tambah Log';
+  $('f_tgl').value=l?l.tgl:today();$('f_mesin').value=l?l.mesin:MESIN[0];$('f_jenis').value=l?l.jenis:JENIS[0];$('f_status').value=l?l.status:STATUS[0];
+  $('f_masalah').value=l?l.masalah:'';$('f_sebab').value=l?l.sebab:'';$('f_tindakan').value=l?l.tindakan:'';
+  $('f_down').value=l?l.down:'';$('f_pic').value=l?l.pic:'';$('f_biaya').value=l?l.biaya:'';$('f_cat').value=l?l.cat:'';
+  $('parts').innerHTML='';(l&&l.parts&&l.parts.length?l.parts:[]).forEach(p=>addPart(p.nama,p.qty));
+  $('modal').classList.add('on');
+}
+function closeForm(){$('modal').classList.remove('on')}
+function editLog(id){openForm(logs.find(l=>l.id===id))}
+function delLog(id){if(confirm('Hapus log ini?')){logs=logs.filter(l=>l.id!==id);persist();render()}}
+function save(){
+  const parts=[...document.querySelectorAll('#parts .prow')].map(r=>{const i=r.querySelectorAll('input');return{nama:i[0].value.trim(),qty:Math.max(1,parseInt(i[1].value)||1)}}).filter(p=>p.nama);
+  const o={tgl:$('f_tgl').value,mesin:$('f_mesin').value,jenis:$('f_jenis').value,status:$('f_status').value,
+    masalah:$('f_masalah').value.trim(),sebab:$('f_sebab').value.trim(),tindakan:$('f_tindakan').value.trim(),parts,
+    down:parseInt($('f_down').value)||0,pic:$('f_pic').value.trim(),biaya:parseInt($('f_biaya').value)||0,cat:$('f_cat').value.trim()};
+  if(!o.tgl){alert('Tanggal wajib diisi');return}
+  if(!o.masalah&&!o.tindakan&&!parts.length){alert('Isi minimal masalah, tindakan, atau part yang diganti');return}
+  if(editId){const i=logs.findIndex(l=>l.id===editId);logs[i]={...logs[i],...o}}else{logs.push({id:Date.now(),...o})}
+  persist();closeForm();render();
+}
+
+function exportPDF(){
+  const L=filtered();if(!L.length){alert('Tidak ada data untuk diexport');return}
+  if(!window.jspdf){alert('Library PDF belum termuat. Cek koneksi internet lalu coba lagi.');return}
+  const doc=new window.jspdf.jsPDF({orientation:'landscape',unit:'mm',format:'a4'});
+  const W=doc.internal.pageSize.getWidth();
+  doc.setFillColor(27,67,50);doc.rect(0,0,W,16,'F');
+  doc.setTextColor(255);doc.setFont('helvetica','bold');doc.setFontSize(14);doc.text('KAME Label - Log Maintenance Plotter',10,10.5);
+  doc.setTextColor(60);doc.setFont('helvetica','normal');doc.setFontSize(9);
+  const f=[];if($('fm').value)f.push('Mesin: '+$('fm').value);if($('fj').value)f.push('Jenis: '+$('fj').value);if($('fs').value)f.push('Status: '+$('fs').value);
+  if($('fd1').value||$('fd2').value)f.push('Periode: '+(fd($('fd1').value)||'...')+' s/d '+(fd($('fd2').value)||'...'));
+  if($('fq').value)f.push('Cari: '+$('fq').value);
+  const down=L.reduce((a,l)=>a+(+l.down||0),0),np=L.reduce((a,l)=>a+(l.parts||[]).reduce((x,p)=>x+(+p.qty||0),0),0),biaya=L.reduce((a,l)=>a+(+l.biaya||0),0);
+  doc.text('Dicetak: '+new Date().toLocaleString('id-ID')+(f.length?'   |   '+f.join(' | '):'   |   Semua data'),10,22);
+  doc.text(`Total log: ${L.length}   |   Kerusakan: ${L.filter(l=>l.jenis==='Kerusakan').length}   |   Part diganti: ${np} pcs   |   Downtime: ${fmtMin(down)}`+(biaya?`   |   Biaya: ${rp(biaya)}`:''),10,27);
+  const asc=[...L].sort((a,b)=>a.tgl.localeCompare(b.tgl)||a.id-b.id);
+  doc.autoTable({startY:31,margin:{left:10,right:10,bottom:14},
+    head:[['No','Tanggal','Mesin','Jenis','Masalah / Kerusakan','Penyebab','Tindakan','Part Diganti','Down','PIC','Status']],
+    body:asc.map((l,i)=>[i+1,fd(l.tgl),l.mesin,l.jenis,l.masalah||'-',l.sebab||'-',(l.tindakan||'-')+(l.cat?'\nCat: '+l.cat:''),partsText(l)||'-',fmtMin(l.down),l.pic||'-',l.status]),
+    styles:{fontSize:7.5,cellPadding:1.8,valign:'top',overflow:'linebreak'},
+    headStyles:{fillColor:[27,67,50],textColor:255},alternateRowStyles:{fillColor:[244,247,245]},
+    columnStyles:{0:{cellWidth:8},1:{cellWidth:19},2:{cellWidth:22},3:{cellWidth:22},4:{cellWidth:45},5:{cellWidth:35},6:{cellWidth:45},7:{cellWidth:32},8:{cellWidth:14},9:{cellWidth:17},10:{cellWidth:18}}});
+  // ringkasan part
+  const pm={};asc.forEach(l=>(l.parts||[]).forEach(p=>{const k=p.nama.toLowerCase();pm[k]=pm[k]||{nama:p.nama,qty:0,n:0,mesin:new Set()};pm[k].qty+=+p.qty||0;pm[k].n++;pm[k].mesin.add(l.mesin)}));
+  const pr=Object.values(pm).sort((a,b)=>b.qty-a.qty);
+  if(pr.length){
+    doc.autoTable({startY:doc.lastAutoTable.finalY+8,margin:{left:10,right:10,bottom:14},
+      head:[['Ringkasan Penggantian Part','Total Qty','Jumlah Kejadian','Mesin']],
+      body:pr.map(p=>[p.nama,p.qty,p.n,[...p.mesin].join(', ')]),
+      styles:{fontSize:8,cellPadding:1.8},headStyles:{fillColor:[45,106,79],textColor:255},tableWidth:150});
+  }
+  const pages=doc.getNumberOfPages();
+  for(let i=1;i<=pages;i++){doc.setPage(i);doc.setFontSize(8);doc.setTextColor(120);doc.text('Hal. '+i+' / '+pages,W-10,doc.internal.pageSize.getHeight()-6,{align:'right'})}
+  doc.save('Log_Maintenance_Plotter_'+today()+'.pdf');
+}
+function dl(name,content,type){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([content],{type}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
+function exportCSV(){
+  const L=filtered().sort((a,b)=>a.tgl.localeCompare(b.tgl));if(!L.length){alert('Tidak ada data');return}
+  const q=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
+  const rows=[['Tanggal','Mesin','Jenis','Masalah','Penyebab','Tindakan','Part Diganti','Downtime (menit)','PIC','Status','Biaya','Catatan']]
+    .concat(L.map(l=>[fd(l.tgl),l.mesin,l.jenis,l.masalah,l.sebab,l.tindakan,partsText(l),l.down,l.pic,l.status,l.biaya,l.cat]));
+  dl('Log_Maintenance_Plotter_'+today()+'.csv','﻿'+rows.map(r=>r.map(q).join(',')).join('\r\n'),'text/csv;charset=utf-8');
+}
+function backup(){dl('backup_log_plotter_'+today()+'.json',JSON.stringify(logs,null,2),'application/json')}
+function restore(e){
+  const f=e.target.files[0];if(!f)return;const r=new FileReader();
+  r.onload=()=>{try{const d=JSON.parse(r.result);if(!Array.isArray(d))throw 0;
+    if(!confirm(`Restore ${d.length} log? Data yang sama (ID sama) akan ditimpa, data lain tetap ada.`))return;
+    const m=new Map(logs.map(l=>[l.id,l]));d.forEach(l=>{if(l&&l.id&&l.tgl)m.set(l.id,l)});logs=[...m.values()];persist();render()}
+    catch(x){alert('File backup tidak valid')}e.target.value=''};
+  r.readAsText(f);
+}
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeForm()});
+init();
+</script>
+</body>
+</html>
