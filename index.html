@@ -75,6 +75,8 @@ tbody tr:hover td{background:#eef7f1}
 .card h2{border-bottom:2px solid var(--g3);padding-bottom:8px}
 @keyframes fl{0%,60%{background:#b7e4c7}100%{background:transparent}}
 tr.flash td{animation:fl 3s ease-out}
+.sync{font-size:11.5px;font-weight:600;padding:5px 11px;border-radius:999px;background:rgba(255,255,255,.12);white-space:nowrap}
+.sync.ok{color:#95d5b2}.sync.off{color:#ffd6a5}
 #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--g);color:#fff;padding:10px 18px;border-radius:8px;font-weight:600;box-shadow:0 6px 20px rgba(0,0,0,.3);opacity:0;pointer-events:none;transition:opacity .25s;z-index:20}
 #toast.on{opacity:1}
 footer{text-align:center;color:var(--mu);font-size:11.5px;padding:6px 0 24px}
@@ -83,7 +85,8 @@ footer{text-align:center;color:var(--mu);font-size:11.5px;padding:6px 0 24px}
 <body>
 <header>
   <div class="brand"><div class="logo">K</div><div><h1>KAME Label<em>Log Maintenance Mesin</em></h1><small>PRODUCTION &middot; KERUSAKAN, PERBAIKAN &amp; PENGGANTIAN PART</small></div></div>
-  <div style="display:flex;gap:8px;flex-wrap:wrap">
+  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+    <span id="sync" class="sync off">&#9679; Memuat...</span>
     <button class="sec" onclick="exportPDF()">Export PDF</button>
     <button class="sec" onclick="exportCSV()">Export CSV</button>
     <button onclick="openForm()">+ Tambah Log</button>
@@ -112,7 +115,7 @@ footer{text-align:center;color:var(--mu);font-size:11.5px;padding:6px 0 24px}
     <thead><tr><th>Tanggal</th><th>Mesin</th><th>Jenis</th><th>Masalah / Kerusakan</th><th>Penyebab</th><th>Tindakan</th><th>Part Diganti</th><th>Downtime</th><th>PIC</th><th>Status</th><th></th></tr></thead>
     <tbody id="tb"></tbody>
   </table><div class="empty" id="empty" style="display:none">Belum ada log. Klik <b>+ Tambah Log</b> untuk mulai.</div></div>
-  <p style="color:var(--mu);font-size:12px">Data tersimpan di browser ini (localStorage). Gunakan Backup JSON secara berkala atau untuk pindah ke komputer lain.</p>
+  <p style="color:var(--mu);font-size:12px">Jika status di kanan atas hijau (Online), data tersimpan di database bersama dan terlihat di semua komputer. Jika oranye, data hanya di browser ini. Backup JSON tetap bisa dipakai kapan saja.</p>
 </div>
 
 <div id="toast"></div>
@@ -158,15 +161,54 @@ const fd=s=>{if(!s)return'';const[a,b,c]=s.split('-');return c+'/'+b+'/'+a};
 const rp=n=>n?'Rp '+Number(n).toLocaleString('id-ID'):'';
 const fmtMin=m=>{m=+m||0;if(!m)return'-';return m>=60?Math.floor(m/60)+' j '+(m%60?m%60+' m':''):m+' m'};
 
+const CACHE='kame_plotter_cache_v2';
+let online=false,pin='';
+try{pin=localStorage.getItem('kame_pin')||''}catch(e){}
+const newId=()=>Date.now()*1000+Math.floor(Math.random()*1000);
 function load(){try{logs=JSON.parse(localStorage.getItem(KEY)||'[]')}catch(e){logs=[]}}
-function persist(){try{localStorage.setItem(KEY,JSON.stringify(logs))}catch(e){alert('Gagal menyimpan ke browser: '+e.message)}}
+function persist(){try{localStorage.setItem(online?CACHE:KEY,JSON.stringify(logs))}catch(e){alert('Gagal menyimpan ke browser: '+e.message)}}
+async function api(method,path,body,retry,quiet){
+  const r=await fetch('/api/logs'+(path||''),{method,headers:{'Content-Type':'application/json','x-pin':pin},body:body?JSON.stringify(body):undefined});
+  if(r.status===401){
+    if(quiet)throw new Error('PIN diperlukan');
+    const p=prompt(retry?'PIN salah. Masukkan PIN akses:':'Masukkan PIN akses:');
+    if(p){pin=p;try{localStorage.setItem('kame_pin',p)}catch(e){}return api(method,path,body,true,quiet)}
+    throw new Error('PIN diperlukan');
+  }
+  if(!r.ok){let j={};try{j=await r.json()}catch(e){}throw new Error(j.error||('HTTP '+r.status))}
+  return r.json();
+}
+function setSync(t,c){const s=$('sync');s.textContent='\u25CF '+t;s.className='sync '+c}
+async function sync(first){
+  try{
+    const d=await api('GET','',null,false,!first);
+    online=true;logs=Array.isArray(d)?d:[];persist();render();setSync('Online \u00B7 data bersama','ok');
+    if(first)await migrate();
+  }catch(e){
+    if(first){online=false;load();render();setSync(e.message==='not_configured'?'Database belum tersambung \u00B7 data hanya di browser ini':'Offline \u00B7 data hanya di browser ini','off')}
+    else setSync('Koneksi terputus','off');
+  }
+}
+async function migrate(){
+  try{if(localStorage.getItem('kame_mig_skip'))return}catch(e){}
+  let loc=[];try{loc=JSON.parse(localStorage.getItem(KEY)||'[]')}catch(e){}
+  const have=new Set(logs.map(l=>l.id));
+  const miss=loc.filter(l=>l&&l.id&&l.tgl&&!have.has(l.id));
+  if(!miss.length)return;
+  if(confirm('Ada '+miss.length+' log di browser ini yang belum ada di database. Upload ke database sekarang?')){
+    try{await api('POST','',miss);logs=logs.concat(miss);localStorage.setItem(KEY,'[]');persist();render();toast(miss.length+' log berhasil diupload')}
+    catch(e){alert('Gagal upload: '+e.message)}
+  }else{try{localStorage.setItem('kame_mig_skip','1')}catch(e){}}
+}
 
 function fillSel(id,arr,all){$(id).innerHTML=(all?'<option value="">Semua</option>':'')+arr.map(x=>`<option>${esc(x)}</option>`).join('')}
 function init(){
   fillSel('fm',MESIN,1);fillSel('fj',JENIS,1);fillSel('fs',STATUS,1);
   fillSel('f_mesin',MESIN);fillSel('f_jenis',JENIS);fillSel('f_status',STATUS);
   $('picl').innerHTML=PIC.map(p=>`<option value="${p}">`).join('');
-  load();render();
+  load();render();sync(true);
+  setInterval(()=>{if(online&&!$('modal').classList.contains('on'))sync(false)},30000);
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden&&online)sync(false)});
 }
 function filtered(){
   const q=$('fq').value.toLowerCase(),m=$('fm').value,j=$('fj').value,s=$('fs').value,d1=$('fd1').value,d2=$('fd2').value;
@@ -217,16 +259,22 @@ function openForm(l){
 }
 function closeForm(){$('modal').classList.remove('on')}
 function editLog(id){openForm(logs.find(l=>l.id===id))}
-function delLog(id){if(confirm('Hapus log ini?')){logs=logs.filter(l=>l.id!==id);persist();render()}}
-function save(){
+async function delLog(id){
+  if(!confirm('Hapus log ini?'))return;
+  if(online){try{await api('DELETE','?id='+id)}catch(e){alert('Gagal menghapus di database: '+e.message);return}}
+  logs=logs.filter(l=>l.id!==id);persist();render();
+}
+async function save(){
   const parts=[...document.querySelectorAll('#parts .prow')].map(r=>{const i=r.querySelectorAll('input');return{nama:i[0].value.trim(),qty:Math.max(1,parseInt(i[1].value)||1)}}).filter(p=>p.nama);
   const o={tgl:$('f_tgl').value,mesin:$('f_mesin').value,jenis:$('f_jenis').value,status:$('f_status').value,
     masalah:$('f_masalah').value.trim(),sebab:$('f_sebab').value.trim(),tindakan:$('f_tindakan').value.trim(),parts,
     down:parseInt($('f_down').value)||0,pic:$('f_pic').value.trim(),biaya:parseInt($('f_biaya').value)||0,cat:$('f_cat').value.trim()};
   if(!o.tgl){alert('Tanggal wajib diisi');return}
   if(!o.masalah&&!o.tindakan&&!parts.length){alert('Isi minimal masalah, tindakan, atau part yang diganti');return}
-  const sid=editId||Date.now();
-  if(editId){const i=logs.findIndex(l=>l.id===editId);logs[i]={...logs[i],...o}}else{logs.push({id:sid,...o})}
+  const sid=editId||newId();
+  const rec=editId?{...logs.find(l=>l.id===editId),...o}:{id:sid,...o};
+  if(online){try{await api('POST','',rec)}catch(e){alert('Gagal menyimpan ke database: '+e.message);return}}
+  if(editId){const i=logs.findIndex(l=>l.id===editId);logs[i]=rec}else{logs.push(rec)}
   persist();closeForm();
   let note='';
   if(!filtered().some(l=>l.id===sid)){['fq','fm','fj','fs','fd1','fd2'].forEach(i=>$(i).value='');note=' Filter direset agar log terlihat.'}
@@ -282,10 +330,10 @@ function exportCSV(){
 function backup(){dl('backup_log_mesin_'+today()+'.json',JSON.stringify(logs,null,2),'application/json')}
 function restore(e){
   const f=e.target.files[0];if(!f)return;const r=new FileReader();
-  r.onload=()=>{try{const d=JSON.parse(r.result);if(!Array.isArray(d))throw 0;
+  r.onload=async()=>{try{const d=JSON.parse(r.result);if(!Array.isArray(d))throw 0;
     if(!confirm(`Restore ${d.length} log? Data yang sama (ID sama) akan ditimpa, data lain tetap ada.`))return;
-    const m=new Map(logs.map(l=>[l.id,l]));d.forEach(l=>{if(l&&l.id&&l.tgl)m.set(l.id,l)});logs=[...m.values()];persist();render()}
-    catch(x){alert('File backup tidak valid')}e.target.value=''};
+    const valid=d.filter(l=>l&&l.id&&l.tgl);if(online)await api('POST','',valid);const m=new Map(logs.map(l=>[l.id,l]));valid.forEach(l=>m.set(l.id,l));logs=[...m.values()];persist();render()}
+    catch(x){alert('Restore gagal: file backup tidak valid atau database tidak bisa dihubungi')}e.target.value=''};
   r.readAsText(f);
 }
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closeForm()});
